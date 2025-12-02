@@ -1,50 +1,169 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <title>Privy Auth Component</title>
-  <script src="https://unpkg.com/@privy-io/react-auth@1.58.3/dist/index.iife.js"></script>
+  <script async src="https://cdn.jsdelivr.net/npm/@privy-io/react-auth@1.58.3"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+        'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+        sans-serif;
+      margin: 0;
+      padding: 10px;
+      background: transparent;
+    }
+    button {
+      background-color: #0084ff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: background-color 0.2s;
+    }
+    button:hover {
+      background-color: #0073e6;
+    }
+    button:active {
+      background-color: #0066cc;
+    }
+    #status {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <button id="loginBtn">🔗 Conectar Billetera</button>
+  <div id="status"></div>
+
   <script>
-    // Función para enviar datos desde el componente HTML a Streamlit (Python )
-    function sendValueToStreamlit(value) {
-      Streamlit.setComponentValue(value);
+    // Configuración de Privy
+    const PRIVY_APP_ID = '{{PRIVY_APP_ID}}';
+    
+    // Función para enviar datos a Streamlit
+    function sendToStreamlit(data) {
+      window.parent.postMessage(
+        {
+          isStreamlitMessage: true,
+          type: "streamlit:setComponentValue",
+          data: data
+        },
+        "*"
+      );
     }
 
-    async function login() {
+    // Función para actualizar el estado
+    function updateStatus(message) {
+      const statusDiv = document.getElementById('status');
+      statusDiv.textContent = message;
+    }
+
+    // Función principal de login
+    async function handleLogin() {
       try {
-        const privy = new Privy.PrivyProvider({
-          appId: '{{PRIVY_APP_ID}}', // Esto será reemplazado por Python
+        updateStatus('Abriendo Privy...');
+        
+        // Esperar a que Privy esté disponible
+        let privy = window.Privy;
+        let attempts = 0;
+        while (!privy && attempts < 50) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          privy = window.Privy;
+          attempts++;
+        }
+
+        if (!privy) {
+          sendToStreamlit({ error: 'Privy SDK no se cargó correctamente' });
+          updateStatus('Error: Privy no disponible');
+          return;
+        }
+
+        updateStatus('Conectando billetera...');
+
+        // Crear instancia de Privy
+        const privyInstance = new privy.PrivyProvider({
+          appId: PRIVY_APP_ID,
           config: {
             loginMethods: ['wallet'],
             appearance: {
               theme: 'light',
-              accentColor: '#676FFF',
-              logo: 'https://your-logo-url.com/logo.png',
-            },
-          },
-        } );
-        
-        // Espera a que el usuario se autentique
-        await privy.getAccessToken();
-        const accessToken = await privy.getAccessToken();
+              accentColor: '#0084ff'
+            }
+          }
+        });
 
-        if (accessToken) {
-            // Si la autenticación es exitosa, envía el token a Python
-            sendValueToStreamlit({token: accessToken});
-        } else {
-            sendValueToStreamlit({error: 'Authentication failed.'});
+        // Esperar a que el usuario se autentique
+        // Usar el método login si está disponible
+        if (privyInstance.login) {
+          await privyInstance.login();
         }
+
+        // Obtener el token de acceso
+        updateStatus('Obteniendo token...');
+        const accessToken = await privyInstance.getAccessToken();
+
+        if (!accessToken) {
+          sendToStreamlit({ error: 'No se pudo obtener el token de acceso' });
+          updateStatus('Error: No token');
+          return;
+        }
+
+        // Obtener información del usuario
+        updateStatus('Obteniendo información del usuario...');
+        const user = await privyInstance.getUser();
+
+        if (!user) {
+          sendToStreamlit({ error: 'No se pudo obtener información del usuario' });
+          updateStatus('Error: No user info');
+          return;
+        }
+
+        // Extraer la dirección de billetera
+        let walletAddress = null;
+        if (user.wallet && user.wallet.address) {
+          walletAddress = user.wallet.address;
+        } else if (user.linkedAccounts) {
+          // Buscar la billetera en las cuentas vinculadas
+          const walletAccount = user.linkedAccounts.find(acc => acc.type === 'wallet');
+          if (walletAccount && walletAccount.address) {
+            walletAddress = walletAccount.address;
+          }
+        }
+
+        // Enviar los datos a Streamlit
+        updateStatus('Enviando datos...');
+        sendToStreamlit({
+          token: accessToken,
+          wallet: walletAddress,
+          userId: user.id
+        });
+
+        updateStatus('✅ Autenticación completada');
+
       } catch (error) {
-        console.error(error);
-        sendValueToStreamlit({error: error.message});
+        console.error('Error en login:', error);
+        updateStatus('Error: ' + error.message);
+        sendToStreamlit({ error: error.message || 'Error desconocido' });
       }
     }
-  </script>
-</head>
-<body>
-  <button onclick="login()">Conectar Billetera y Verificar</button>
-  <script>
-    // Informa a Streamlit que el componente está listo
-    Streamlit.setFrameHeight(50);
+
+    // Asignar el evento al botón
+    document.getElementById('loginBtn').addEventListener('click', handleLogin);
+
+    // Informar a Streamlit que el componente está listo
+    window.parent.postMessage(
+      {
+        isStreamlitMessage: true,
+        type: "streamlit:setFrameHeight",
+        data: 80
+      },
+      "*"
+    );
   </script>
 </body>
 </html>
