@@ -1,6 +1,6 @@
 import streamlit as st
-import streamlit.components.v1 as components
-import os
+import requests
+import time
 from web3 import Web3
 from eth_account.messages import encode_defunct
 
@@ -17,7 +17,7 @@ CHAIN = "arbitrum"
 ARBITRUM_RPC = "https://arb1.arbitrum.io/rpc"
 
 # URL del servidor FastAPI
-FASTAPI_SERVER_URL = "https://privy-moralis-streamlit-production.up.railway.app"
+FASTAPI_SERVER_URL = "http://localhost:8000"
 
 # --- INTERFAZ DE USUARIO ---
 st.title("🔐 Acceso Exclusivo para Holders")
@@ -34,8 +34,8 @@ if 'user_wallet' not in st.session_state:
 if 'user_nfts' not in st.session_state:
     st.session_state.user_nfts = None
 
-if 'auth_data' not in st.session_state:
-    st.session_state.auth_data = None
+if 'checking_auth' not in st.session_state:
+    st.session_state.checking_auth = False
 
 # --- FUNCIÓN PARA VERIFICAR NFT CON WEB3 ---
 def verify_nft_ownership(wallet_address):
@@ -87,6 +87,37 @@ def verify_signature(wallet_address, message, signature):
         st.error(f"❌ Error al verificar firma: {e}")
         return False
 
+# --- FUNCIÓN PARA CONSULTAR EL SERVIDOR FASTAPI ---
+def check_auth_on_server(wallet_address):
+    """
+    Consultar el servidor FastAPI para ver si hay datos de autenticación.
+    """
+    try:
+        response = requests.get(
+            f"{FASTAPI_SERVER_URL}/api/auth/check/{wallet_address}",
+            timeout=5
+        )
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"authenticated": False}
+    except Exception as e:
+        st.error(f"❌ Error al conectar con el servidor: {e}")
+        return {"authenticated": False}
+
+# --- FUNCIÓN PARA LIMPIAR AUTENTICACIÓN EN EL SERVIDOR ---
+def clear_auth_on_server(wallet_address):
+    """
+    Limpiar datos de autenticación del servidor.
+    """
+    try:
+        requests.delete(
+            f"{FASTAPI_SERVER_URL}/api/auth/clear/{wallet_address}",
+            timeout=5
+        )
+    except:
+        pass
+
 # Si el usuario está autenticado, muestra el contenido
 if st.session_state.authenticated:
     st.success("✅ ¡Autenticación y verificación completadas! Bienvenido.")
@@ -112,6 +143,7 @@ if st.session_state.authenticated:
     """)
     
     if st.button("🚪 Cerrar Sesión"):
+        clear_auth_on_server(st.session_state.user_wallet)
         st.session_state.authenticated = False
         st.session_state.user_wallet = None
         st.session_state.user_nfts = None
@@ -124,73 +156,66 @@ else:
     # Botón para abrir la ventana de autenticación
     st.link_button("🔗 Conectar Billetera", f"{FASTAPI_SERVER_URL}")
     
-    st.info("Después de autenticarte, vuelve a esta página y refresca.")
-
-    # Componente que escucha postMessage desde la ventana emergente
-    components.html("""
-    <script>
-        // Escuchar mensajes desde la ventana emergente
-        window.addEventListener('message', function(event) {
-            // Verificar que el mensaje sea del tipo esperado
-            if (event.data && event.data.type === 'web3_auth_complete') {
-                // Guardar los datos en sessionStorage para que Streamlit los lea
-                sessionStorage.setItem('web3_auth_data', JSON.stringify(event.data.data));
-                
-                // Notificar a Streamlit que hay nuevos datos
-                // Esto se hace enviando un evento personalizado
-                window.dispatchEvent(new CustomEvent('web3_auth_received', {
-                    detail: event.data.data
-                }));
-                
-                console.log('Datos de autenticación recibidos:', event.data.data);
-            }
-        });
-    </script>
-    """, height=0)
-
-    # Leer datos de sessionStorage usando JavaScript
-    auth_data_html = components.html("""
-    <script>
-        // Intentar leer los datos de sessionStorage
-        const authData = sessionStorage.getItem('web3_auth_data');
-        if (authData) {
-            // Enviar a Streamlit
-            window.parent.postMessage(
-                {
-                    isStreamlitMessage: true,
-                    type: "streamlit:setComponentValue",
-                    data: JSON.parse(authData)
-                },
-                "*"
-            );
-            
-            // Limpiar
-            sessionStorage.removeItem('web3_auth_data');
-        }
-    </script>
-    """, height=0)
-
-    # Procesar datos recibidos
-    if auth_data_html and isinstance(auth_data_html, dict):
-        wallet_address = auth_data_html.get('wallet')
-        signature = auth_data_html.get('signature')
-        message = auth_data_html.get('message')
+    st.info("Después de autenticarte, vuelve a esta página.")
+    
+    # Botón para verificar si el usuario se autenticó
+    if st.button("🔄 Verificar Autenticación"):
+        st.session_state.checking_auth = True
+    
+    if st.session_state.checking_auth:
+        # Mostrar un placeholder mientras verificamos
+        placeholder = st.empty()
         
-        if wallet_address and signature and message:
-            with st.spinner("🔍 Verificando firma y buscando tu NFT..."):
-                if verify_signature(wallet_address, message, signature):
-                    st.success(f"✅ Firma verificada. Billetera: `{wallet_address}`")
-                    has_nft, nfts = verify_nft_ownership(wallet_address)
-                    if has_nft:
-                        st.session_state.authenticated = True
-                        st.session_state.user_wallet = wallet_address
-                        st.session_state.user_nfts = nfts
-                        st.success("✅ ¡NFT verificado! Acceso concedido.")
-                        st.rerun()
+        # Esperar a que el usuario se autentique (máximo 5 minutos)
+        for i in range(300):  # 5 minutos = 300 segundos
+            placeholder.info(f"⏳ Verificando... ({i}s)")
+            
+            # Aquí iría la lógica para detectar automáticamente
+            # Por ahora, el usuario debe hacer clic en "Verificar Autenticación" después de autenticarse
+            time.sleep(1)
+            
+            # En una versión mejorada, podrías usar WebSocket o Server-Sent Events
+            # para detectar automáticamente cuando el usuario se autentica
+        
+        placeholder.empty()
+        st.session_state.checking_auth = False
+    
+    # Alternativa: Mostrar un campo de entrada para que el usuario pegue su dirección
+    st.divider()
+    st.subheader("Verificación Manual")
+    st.caption("Si prefieres, puedes pegar tu dirección de billetera después de autenticarte:")
+    
+    wallet_input = st.text_input("Dirección de billetera (después de autenticarte):")
+    
+    if wallet_input:
+        if not wallet_input.startswith("0x") or len(wallet_input) != 42:
+            st.error("❌ Dirección inválida. Debe empezar con 0x y tener 42 caracteres.")
+        else:
+            # Consultar el servidor para ver si hay datos de autenticación
+            auth_result = check_auth_on_server(wallet_input)
+            
+            if auth_result.get("authenticated"):
+                wallet_address = auth_result.get("wallet")
+                signature = auth_result.get("signature")
+                message = auth_result.get("message")
+                
+                with st.spinner("🔍 Verificando firma y buscando tu NFT..."):
+                    if verify_signature(wallet_address, message, signature):
+                        st.success(f"✅ Firma verificada. Billetera: `{wallet_address}`")
+                        has_nft, nfts = verify_nft_ownership(wallet_address)
+                        if has_nft:
+                            st.session_state.authenticated = True
+                            st.session_state.user_wallet = wallet_address
+                            st.session_state.user_nfts = nfts
+                            st.success("✅ ¡NFT verificado! Acceso concedido.")
+                            st.rerun()
+                        else:
+                            st.warning("❌ Acceso Denegado")
+                            st.error("La billetera conectada no posee el NFT requerido en Arbitrum.")
+                            st.info(f"Contrato requerido: `{NFT_CONTRACT_ADDRESS}`")
+                            st.info(f"Red: Arbitrum")
                     else:
-                        st.warning("❌ Acceso Denegado")
-                        st.error("La billetera conectada no posee el NFT requerido en Arbitrum.")
-                        st.info(f"Contrato requerido: `{NFT_CONTRACT_ADDRESS}`")
-                        st.info(f"Red: Arbitrum")
-                else:
-                    st.error("❌ La firma no es válida")
+                        st.error("❌ La firma no es válida")
+            else:
+                st.warning("⚠️ No se encontraron datos de autenticación para esta billetera.")
+                st.info("Asegúrate de haber completado el proceso de autenticación en la ventana emergente.")
