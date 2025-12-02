@@ -174,32 +174,34 @@
         // Solicitar firma
         const signature = await web3.eth.personal.sign(message, walletAddress, '');
 
-        updateStatus('✅ Autenticación completada', 'success');
+        updateStatus('✅ Autenticación completada. Guardando datos...', 'success');
 
-        // ENVIAR DATOS A LA VENTANA PADRE (STREAMLIT) USANDO postMessage
-        const authData = {
-          wallet: walletAddress,
-          signature: signature,
-          message: message,
-          timestamp: Date.now()
-        };
-        
-        if (window.opener) {
-          // Enviar a la ventana que abrió esta
-          window.opener.postMessage(
-            {
-              type: 'web3_auth_complete',
-              data: authData
+        // GUARDAR DATOS EN EL SERVIDOR FASTAPI
+        try {
+          const response = await fetch('/api/auth/save', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
             },
-            '*'
-          );
-          
-          // Cerrar la ventana después de 1 segundo
-          setTimeout(() => {
-            window.close();
-          }, 1000);
-        } else {
-          updateStatus('⚠️ No se pudo cerrar la ventana automáticamente. Puedes cerrarla manualmente.', 'info');
+            body: JSON.stringify({
+              wallet: walletAddress,
+              signature: signature,
+              message: message
+            })
+          });
+
+          if (response.ok) {
+            updateStatus('✅ Datos guardados. Cerrando ventana...', 'success');
+            
+            // Cerrar la ventana después de 1 segundo
+            setTimeout(() => {
+              window.close();
+            }, 1000);
+          } else {
+            updateStatus('❌ Error al guardar datos en el servidor', 'error');
+          }
+        } catch (error) {
+          updateStatus(`❌ Error de conexión: ${error.message}`, 'error');
         }
 
       } catch (error) {
