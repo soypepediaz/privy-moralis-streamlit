@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import time
 from web3 import Web3
+from eth_account import Account
 from eth_account.messages import encode_defunct
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
@@ -78,7 +79,7 @@ def verify_signature(wallet_address, message, signature):
     """
     try:
         message_hash = encode_defunct(text=message)
-        recovered_address = Web3.eth.Account.recover_message(message_hash, signature=signature)
+        recovered_address = Account.recover_message(message_hash, signature=signature)
         return recovered_address.lower() == wallet_address.lower()
     except Exception as e:
         st.error(f"❌ Error al verificar firma: {e}")
