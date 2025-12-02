@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>WalletConnect Authentication</title>
+  <title>Web3 Authentication</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -13,7 +13,7 @@
       justify-content: center;
       height: 100vh;
       margin: 0;
-      background-color: #f5f5f5;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     }
     .container {
       text-align: center;
@@ -21,83 +21,161 @@
       padding: 40px;
       border-radius: 12px;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+      max-width: 500px;
     }
     h1 {
       color: #333;
+      margin-top: 0;
+    }
+    p {
+      color: #666;
+      margin-bottom: 20px;
     }
     button {
-      background-color: #0084ff;
+      background-color: #667eea;
       color: white;
       border: none;
-      padding: 15px 30px;
+      padding: 15px 40px;
       border-radius: 8px;
       cursor: pointer;
       font-size: 16px;
       font-weight: 600;
-      transition: background-color 0.2s;
-      margin-top: 20px;
+      transition: all 0.3s;
+      width: 100%;
     }
     button:hover {
-      background-color: #0073e6;
+      background-color: #5568d3;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    button:active {
+      transform: translateY(0);
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+      transform: none;
     }
     #status {
       margin-top: 20px;
       font-size: 14px;
       color: #666;
+      min-height: 20px;
+    }
+    .success {
+      color: #28a745;
+    }
+    .error {
+      color: #dc3545;
+    }
+    .info {
+      background-color: #e7f3ff;
+      border-left: 4px solid #2196F3;
+      padding: 10px;
+      margin-top: 15px;
+      border-radius: 4px;
+      color: #0c5aa0;
+      font-size: 12px;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>Autenticación con WalletConnect</h1>
-    <p>Conecta tu billetera para continuar</p>
-    <button id="loginBtn">🔗 Conectar Billetera</button>
+    <h1>🔐 Acceso Exclusivo</h1>
+    <p>Conecta tu billetera para verificar que posees el NFT requerido</p>
+    
+    <button id="connectBtn">🔗 Conectar Billetera</button>
+    
     <div id="status"></div>
+    
+    <div class="info" id="infoBox">
+      💡 Asegúrate de tener una billetera Web3 instalada (MetaMask, Rabby, etc.)
+    </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
 
   <script>
-    function updateStatus(message) {
+    function updateStatus(message, type = 'info') {
       const statusDiv = document.getElementById('status');
       statusDiv.textContent = message;
+      statusDiv.className = type;
     }
 
-    async function handleLogin() {
+    function getProvider() {
+      // Detectar qué billetera está disponible
+      // Rabby se detecta primero porque es más específico
+      if (typeof window.rabby !== 'undefined') {
+        return { provider: window.rabby, name: 'Rabby' };
+      }
+      if (typeof window.ethereum !== 'undefined') {
+        return { provider: window.ethereum, name: 'MetaMask' };
+      }
+      return null;
+    }
+
+    async function connectAndSign() {
       try {
-        updateStatus('Inicializando WalletConnect...');
+        const providerInfo = getProvider();
         
-        const provider = new WalletConnectProvider.default({
-          infuraId: "8043bb2cf99347b1bfadfb3c6b0f486a",
-          chainId: 42161, // Arbitrum
-          rpc: {
-            42161: "https://arb1.arbitrum.io/rpc"
-          }
-        });
+        if (!providerInfo) {
+          updateStatus('❌ No se detectó ninguna billetera Web3 instalada', 'error');
+          return;
+        }
 
-        await provider.enable();
+        const provider = providerInfo.provider;
+        const providerName = providerInfo.name;
         
-        updateStatus('Billetera conectada, solicitando firma...');
-
-        const accounts = await provider.request({ method: 'eth_accounts' });
+        updateStatus(`Conectando ${providerName}...`);
+        
+        const web3 = new Web3(provider);
+        const accounts = await web3.eth.requestAccounts();
         
         if (!accounts || accounts.length === 0) {
-          updateStatus('Error: No se pudo obtener la dirección de billetera');
+          updateStatus('❌ No se pudo obtener la dirección de billetera', 'error');
           return;
         }
 
         const walletAddress = accounts[0];
+        updateStatus(`✅ Billetera conectada`);
+
+        // Cambiar a Arbitrum si es necesario
+        try {
+          await provider.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: '0xa4b1' }], // Arbitrum
+          });
+        } catch (switchError) {
+          if (switchError.code === 4902) {
+            // Arbitrum no está agregado, agregarlo
+            await provider.request({
+              method: 'wallet_addEthereumChain',
+              params: [
+                {
+                  chainId: '0xa4b1',
+                  chainName: 'Arbitrum One',
+                  rpcUrls: ['https://arb1.arbitrum.io/rpc'],
+                  blockExplorerUrls: ['https://arbiscan.io'],
+                  nativeCurrency: {
+                    name: 'ETH',
+                    symbol: 'ETH',
+                    decimals: 18,
+                  },
+                },
+              ],
+            });
+          }
+        }
+
+        // Crear mensaje para firmar
         const message = `Conectar a NFT Gated App\n\nDirección: ${walletAddress}\nTimestamp: ${Date.now()}`;
         
         updateStatus('Solicitando firma...');
 
-        const signature = await provider.request({
-          method: 'personal_sign',
-          params: [message, walletAddress]
-        });
+        // Solicitar firma
+        const signature = await web3.eth.personal.sign(message, walletAddress, '');
 
-        updateStatus('✅ Autenticación completada. Puedes cerrar esta ventana.');
+        updateStatus('✅ Autenticación completada', 'success');
 
         // Enviar datos a la ventana principal (Streamlit)
         if (window.opener) {
@@ -108,18 +186,41 @@
               signature: signature,
               message: message
             },
-            '*' // En producción, usar el dominio de Streamlit
+            '*'
           );
-          window.close();
+          
+          // Cerrar la ventana después de 1 segundo
+          setTimeout(() => {
+            window.close();
+          }, 1000);
+        } else {
+          updateStatus('⚠️ Puedes cerrar esta ventana manualmente', 'info');
         }
 
       } catch (error) {
-        console.error('Error en login:', error);
-        updateStatus('Error: ' + error.message);
+        console.error('Error:', error);
+        
+        if (error.code === 4001) {
+          updateStatus('❌ Transacción rechazada por el usuario', 'error');
+        } else if (error.message && error.message.includes('User denied')) {
+          updateStatus('❌ Acceso denegado por el usuario', 'error');
+        } else {
+          updateStatus(`❌ Error: ${error.message || 'Error desconocido'}`, 'error');
+        }
       }
     }
 
-    document.getElementById('loginBtn').addEventListener('click', handleLogin);
+    // Botón conectar
+    document.getElementById('connectBtn').addEventListener('click', connectAndSign);
+
+    // Verificar si hay billetera instalada al cargar
+    window.addEventListener('load', () => {
+      const providerInfo = getProvider();
+      if (!providerInfo) {
+        document.getElementById('connectBtn').disabled = true;
+        document.getElementById('infoBox').innerHTML = '⚠️ No se detectó ninguna billetera Web3. Por favor, instala <a href="https://metamask.io" target="_blank">MetaMask</a> o <a href="https://rabby.io" target="_blank">Rabby</a>';
+      }
+    });
   </script>
 </body>
 </html>
