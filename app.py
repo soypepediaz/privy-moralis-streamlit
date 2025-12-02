@@ -17,7 +17,7 @@ CHAIN = "arbitrum"
 ARBITRUM_RPC = "https://arb1.arbitrum.io/rpc"
 
 # URL del servidor FastAPI
-FASTAPI_SERVER_URL = "http://localhost:8000"
+FASTAPI_SERVER_URL = "privy-moralis-streamlit-production.up.railway.app"
 
 # --- INTERFAZ DE USUARIO ---
 st.title("🔐 Acceso Exclusivo para Holders")
