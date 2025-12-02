@@ -16,8 +16,8 @@ NFT_CONTRACT_ADDRESS = "0xF4820467171695F4d2760614C77503147A9CB1E8"
 CHAIN = "arbitrum"
 ARBITRUM_RPC = "https://arb1.arbitrum.io/rpc"
 
-# URL del servidor FastAPI (debe ser la URL pública de tu servidor)
-FASTAPI_SERVER_URL = "https://privy-moralis-streamlit-production.up.railway.app" # Cambiar en producción
+# URL del servidor FastAPI
+FASTAPI_SERVER_URL = "http://localhost:8000"
 
 # --- INTERFAZ DE USUARIO ---
 st.title("🔐 Acceso Exclusivo para Holders")
@@ -38,7 +38,6 @@ if 'user_nfts' not in st.session_state:
 def verify_nft_ownership(wallet_address):
     """
     Verifica si una dirección de billetera posee el NFT requerido en Arbitrum.
-    Retorna True si posee el NFT, False si no.
     """
     try:
         w3 = Web3(Web3.HTTPProvider(ARBITRUM_RPC))
@@ -124,23 +123,36 @@ else:
     
     st.info("Después de autenticarte, vuelve a esta página y refresca.")
 
-    # Componente para escuchar mensajes de la ventana de autenticación
+    # Componente para detectar datos en localStorage
     components.html("""
     <script>
-        window.addEventListener('message', (event) => {
-            // En producción, verificar el origen
-            if (event.data && event.data.type === 'auth_complete') {
+        // Verificar cada 500ms si hay datos en localStorage
+        const checkInterval = setInterval(() => {
+            const authData = localStorage.getItem('web3_auth_data');
+            if (authData) {
                 // Enviar datos a Streamlit
+                const data = JSON.parse(authData);
                 window.parent.postMessage(
                     {
                         isStreamlitMessage: true,
                         type: "streamlit:setComponentValue",
-                        data: event.data
+                        data: data
                     },
                     "*"
                 );
+                
+                // Limpiar localStorage
+                localStorage.removeItem('web3_auth_data');
+                
+                // Dejar de verificar
+                clearInterval(checkInterval);
             }
-        });
+        }, 500);
+        
+        // Dejar de verificar después de 5 minutos
+        setTimeout(() => {
+            clearInterval(checkInterval);
+        }, 300000);
     </script>
     """, height=0)
 
@@ -164,5 +176,8 @@ else:
                         st.rerun()
                     else:
                         st.warning("❌ Acceso Denegado")
+                        st.error("La billetera conectada no posee el NFT requerido en Arbitrum.")
+                        st.info(f"Contrato requerido: `{NFT_CONTRACT_ADDRESS}`")
+                        st.info(f"Red: Arbitrum")
                 else:
                     st.error("❌ La firma no es válida")
