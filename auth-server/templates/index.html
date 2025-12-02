@@ -61,6 +61,7 @@
       font-size: 14px;
       color: #666;
       min-height: 20px;
+      word-break: break-word;
     }
     .success {
       color: #28a745;
@@ -77,6 +78,18 @@
       color: #0c5aa0;
       font-size: 12px;
     }
+    .debug {
+      background-color: #f5f5f5;
+      border: 1px solid #ddd;
+      padding: 10px;
+      margin-top: 15px;
+      border-radius: 4px;
+      font-size: 11px;
+      text-align: left;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: monospace;
+    }
   </style>
 </head>
 <body>
@@ -91,30 +104,57 @@
     <div class="info" id="infoBox">
       💡 Asegúrate de tener una billetera Web3 instalada (MetaMask, Rabby, etc.)
     </div>
+
+    <div class="debug" id="debugBox" style="display: none;">
+      <strong>Debug Log:</strong>
+      <div id="debugLog"></div>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
 
   <script>
+    // Debug logging
+    const debugMode = true;
+    const debugLog = [];
+
+    function log(message) {
+      console.log(message);
+      if (debugMode) {
+        debugLog.push(`[${new Date().toLocaleTimeString()}] ${message}`);
+        const debugBox = document.getElementById('debugBox');
+        const debugLogDiv = document.getElementById('debugLog');
+        debugBox.style.display = 'block';
+        debugLogDiv.innerHTML = debugLog.map(m => `<div>${m}</div>`).join('');
+        debugLogDiv.scrollTop = debugLogDiv.scrollHeight;
+      }
+    }
+
     function updateStatus(message, type = 'info') {
       const statusDiv = document.getElementById('status');
       statusDiv.textContent = message;
       statusDiv.className = type;
+      log(`[STATUS] ${message}`);
     }
 
     function getProvider() {
       // Detectar qué billetera está disponible
       if (typeof window.rabby !== 'undefined') {
+        log('✅ Rabby detectado');
         return { provider: window.rabby, name: 'Rabby' };
       }
       if (typeof window.ethereum !== 'undefined') {
+        log('✅ MetaMask/Ethereum detectado');
         return { provider: window.ethereum, name: 'MetaMask' };
       }
+      log('❌ No se detectó billetera');
       return null;
     }
 
     async function connectAndSign() {
       try {
+        log('=== Iniciando proceso de autenticación ===');
+        
         const providerInfo = getProvider();
         
         if (!providerInfo) {
@@ -125,10 +165,14 @@
         const provider = providerInfo.provider;
         const providerName = providerInfo.name;
         
+        log(`Usando: ${providerName}`);
         updateStatus(`Conectando ${providerName}...`);
         
         const web3 = new Web3(provider);
+        log('Web3 inicializado');
+        
         const accounts = await web3.eth.requestAccounts();
+        log(`Cuentas obtenidas: ${accounts.length}`);
         
         if (!accounts || accounts.length === 0) {
           updateStatus('❌ No se pudo obtener la dirección de billetera', 'error');
@@ -136,16 +180,20 @@
         }
 
         const walletAddress = accounts[0];
-        updateStatus(`✅ Billetera conectada`);
+        log(`Dirección: ${walletAddress}`);
+        updateStatus(`✅ Billetera conectada: ${walletAddress}`);
 
         // Cambiar a Arbitrum si es necesario
         try {
+          log('Intentando cambiar a Arbitrum...');
           await provider.request({
             method: 'wallet_switchEthereumChain',
             params: [{ chainId: '0xa4b1' }], // Arbitrum
           });
+          log('✅ Red cambiada a Arbitrum');
         } catch (switchError) {
           if (switchError.code === 4902) {
+            log('Arbitrum no está agregado, agregando...');
             // Arbitrum no está agregado, agregarlo
             await provider.request({
               method: 'wallet_addEthereumChain',
@@ -163,21 +211,30 @@
                 },
               ],
             });
+            log('✅ Arbitrum agregado');
+          } else {
+            log(`⚠️ Error al cambiar red: ${switchError.message}`);
           }
         }
 
         // Crear mensaje para firmar
         const message = `Conectar a NFT Gated App\n\nDirección: ${walletAddress}\nTimestamp: ${Date.now()}`;
+        log(`Mensaje a firmar: ${message}`);
         
         updateStatus('Solicitando firma...');
 
         // Solicitar firma
         const signature = await web3.eth.personal.sign(message, walletAddress, '');
+        log(`✅ Firma obtenida: ${signature.substring(0, 20)}...`);
 
         updateStatus('✅ Autenticación completada. Guardando datos...', 'success');
 
         // GUARDAR DATOS EN EL SERVIDOR FASTAPI
         try {
+          log('Enviando datos al servidor...');
+          log(`URL: /api/auth/save`);
+          log(`Datos: wallet=${walletAddress}, signature=${signature.substring(0, 20)}..., message=${message.substring(0, 30)}...`);
+          
           const response = await fetch('/api/auth/save', {
             method: 'POST',
             headers: {
@@ -190,22 +247,33 @@
             })
           });
 
+          log(`Respuesta del servidor: ${response.status} ${response.statusText}`);
+          const responseData = await response.json();
+          log(`Datos de respuesta: ${JSON.stringify(responseData)}`);
+
           if (response.ok) {
             updateStatus('✅ Datos guardados. Cerrando ventana...', 'success');
+            log('✅ Datos guardados exitosamente');
             
-            // Cerrar la ventana después de 1 segundo
+            // Cerrar la ventana después de 2 segundos
             setTimeout(() => {
+              log('Cerrando ventana...');
               window.close();
-            }, 1000);
+            }, 2000);
           } else {
             updateStatus('❌ Error al guardar datos en el servidor', 'error');
+            log(`❌ Error: ${responseData.detail || 'Error desconocido'}`);
           }
         } catch (error) {
           updateStatus(`❌ Error de conexión: ${error.message}`, 'error');
+          log(`❌ Error de conexión: ${error.message}`);
+          log(`Stack: ${error.stack}`);
         }
 
       } catch (error) {
         console.error('Error:', error);
+        log(`❌ Error general: ${error.message}`);
+        log(`Stack: ${error.stack}`);
         
         if (error.code === 4001) {
           updateStatus('❌ Transacción rechazada por el usuario', 'error');
@@ -222,6 +290,7 @@
 
     // Verificar si hay billetera instalada al cargar
     window.addEventListener('load', () => {
+      log('=== Página cargada ===');
       const providerInfo = getProvider();
       if (!providerInfo) {
         document.getElementById('connectBtn').disabled = true;
