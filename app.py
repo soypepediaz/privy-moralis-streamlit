@@ -37,7 +37,6 @@ MORALIS_API_KEY = "tu-moralis-key"
 def get_privy_public_key():
     """Obtiene la clave pública de Privy para verificar tokens JWT"""
     try:
-        # Privy proporciona la clave pública en su endpoint JWKS
         response = requests.get(
             f"https://auth.privy.io/api/v1/apps/{PRIVY_APP_ID}/.well-known/jwks.json",
             timeout=10
@@ -57,22 +56,18 @@ def verify_privy_token(token):
     Retorna un diccionario con los datos del usuario si es válido, None si no.
     """
     try:
-        # Obtener la clave pública
         public_key_data = get_privy_public_key()
         
         if not public_key_data:
             st.error("❌ No se pudo obtener la clave pública de Privy")
             return None
         
-        # Construir la clave pública en formato PEM desde JWK
         try:
             from jwt.algorithms import RSAAlgorithm
             public_key = RSAAlgorithm.from_jwk(public_key_data)
         except Exception:
-            # Si falla, intentar con la clave directamente
             public_key = public_key_data
         
-        # Verificar y decodificar el token
         decoded = jwt.decode(
             token,
             public_key,
@@ -109,7 +104,6 @@ def verify_nft_ownership(wallet_address):
             }
         )
         
-        # Verificar si hay resultados
         if result.get("result") and len(result["result"]) > 0:
             return True, result["result"]
         else:
@@ -139,10 +133,8 @@ if st.session_state.authenticated:
     st.success("✅ ¡Autenticación y verificación completadas! Bienvenido.")
     st.balloons()
     
-    # Mostrar información del usuario
     st.info(f"Billetera conectada: `{st.session_state.user_wallet}`")
     
-    # Mostrar información del NFT
     if st.session_state.user_nfts:
         st.subheader("📜 Tus NFTs")
         for nft in st.session_state.user_nfts:
@@ -154,7 +146,6 @@ if st.session_state.authenticated:
                 st.write(f"**{nft.get('name', 'NFT sin nombre')}**")
                 st.caption(f"Token ID: {nft.get('token_id', 'N/A')}")
     
-    # --- CONTENIDO EXCLUSIVO ---
     st.header("🎁 Contenido Exclusivo")
     st.write("""
     Este es el contenido que solo pueden ver los holders del NFT.
@@ -167,7 +158,6 @@ if st.session_state.authenticated:
     - Lo que necesites proteger
     """)
     
-    # Botón para cerrar sesión
     if st.button("🚪 Cerrar Sesión"):
         st.session_state.authenticated = False
         st.session_state.user_wallet = None
@@ -175,15 +165,12 @@ if st.session_state.authenticated:
         st.rerun()
 
 else:
-    # Si no está autenticado, muestra el componente de login
     st.subheader("Paso 1: Conecta tu Billetera")
     st.caption("Haz clic en el botón para conectar tu billetera de forma segura con Privy.")
     
-    # Cargar el componente HTML
     try:
         component_path = os.path.join('components', 'privy_component.html')
         
-        # Verificar si el archivo existe
         if not os.path.exists(component_path):
             st.error(f"❌ Error: No se encontró el archivo '{component_path}'")
             st.info("Asegúrate de que la carpeta 'components' y el archivo 'privy_component.html' existan en tu repositorio.")
@@ -192,10 +179,8 @@ else:
         with open(component_path, 'r') as f:
             html_content = f.read()
         
-        # Reemplazar el placeholder con el App ID real
         html_content = html_content.replace('{{PRIVY_APP_ID}}', PRIVY_APP_ID)
         
-        # Renderizar el componente
         component_value = components.html(html_content, height=100)
 
         if component_value:
@@ -207,7 +192,6 @@ else:
                 
                 with st.spinner("🔍 Verificando token y buscando tu NFT..."):
                     try:
-                        # Paso 1: Verificar el token JWT con Privy
                         decoded_token = verify_privy_token(access_token)
                         
                         if decoded_token is None:
@@ -217,7 +201,6 @@ else:
                         user_did = decoded_token.get('sub')
                         st.success(f"✅ Token verificado. Usuario: `{user_did}`")
 
-                        # Paso 2: Verificar la dirección de billetera
                         if not wallet_address:
                             st.error("❌ No se pudo obtener la dirección de billetera")
                             st.info("Por favor, intenta de nuevo")
@@ -225,19 +208,16 @@ else:
                         
                         st.success(f"✅ Billetera conectada: `{wallet_address}`")
 
-                        # Paso 3: Verificar la posesión del NFT con Moralis
                         st.info("🔍 Verificando NFT en Arbitrum...")
                         has_nft, nfts = verify_nft_ownership(wallet_address)
 
                         if has_nft:
-                            # ¡El usuario tiene el NFT!
                             st.session_state.authenticated = True
                             st.session_state.user_wallet = wallet_address
                             st.session_state.user_nfts = nfts
                             st.success("✅ ¡NFT verificado! Acceso concedido.")
                             st.rerun()
                         else:
-                            # El usuario NO tiene el NFT
                             st.warning("❌ Acceso Denegado")
                             st.error("La billetera conectada no posee el NFT requerido en Arbitrum.")
                             st.info(f"Contrato requerido: `{NFT_CONTRACT_ADDRESS}`")
