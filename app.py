@@ -35,10 +35,11 @@ if 'user_wallet' not in st.session_state:
 if 'user_nfts' not in st.session_state:
     st.session_state.user_nfts = None
 
-# --- FUNCIÓN PARA VERIFICAR NFT CON WEB3 ---
+# --- FUNCIÓN PARA VERIFICAR NFT ACTIVO CON WEB3 ---
 def verify_nft_ownership(wallet_address):
     """
-    Verifica si una dirección de billetera posee el NFT requerido en Arbitrum.
+    Verifica si una dirección de billetera posee un NFT ACTIVO requerido en Arbitrum.
+    Usa la función activeBalanceOf para verificar solo NFTs que no han caducado.
     """
     try:
         w3 = Web3(Web3.HTTPProvider(ARBITRUM_RPC))
@@ -46,11 +47,12 @@ def verify_nft_ownership(wallet_address):
             st.error("❌ No se pudo conectar a la red Arbitrum")
             return False, None
         
+        # ABI con la función activeBalanceOf
         ERC721_ABI = [
             {
                 "constant": True,
                 "inputs": [{"name": "owner", "type": "address"}],
-                "name": "balanceOf",
+                "name": "activeBalanceOf",
                 "outputs": [{"name": "", "type": "uint256"}],
                 "type": "function"
             }
@@ -61,15 +63,16 @@ def verify_nft_ownership(wallet_address):
             abi=ERC721_ABI
         )
         
-        balance = contract.functions.balanceOf(Web3.to_checksum_address(wallet_address)).call()
+        # Verificar el balance activo (NFTs no caducados)
+        active_balance = contract.functions.activeBalanceOf(Web3.to_checksum_address(wallet_address)).call()
         
-        if balance > 0:
-            return True, {"balance": balance, "contract": NFT_CONTRACT_ADDRESS}
+        if active_balance > 0:
+            return True, {"active_balance": active_balance, "contract": NFT_CONTRACT_ADDRESS}
         else:
             return False, None
             
     except Exception as e:
-        st.error(f"❌ Error al verificar NFT: {e}")
+        st.error(f"❌ Error al verificar NFT activo: {e}")
         return False, None
 
 # --- FUNCIÓN PARA VERIFICAR FIRMA ---
@@ -124,13 +127,14 @@ if st.session_state.authenticated:
     st.info(f"Billetera conectada: `{st.session_state.user_wallet}`")
     
     if st.session_state.user_nfts:
-        st.subheader("📜 Información del NFT")
-        st.write(f"**Balance:** {st.session_state.user_nfts.get('balance', 0)} NFT(s)")
+        st.subheader("📜 Información del NFT Activo")
+        st.write(f"**Balance Activo:** {st.session_state.user_nfts.get('active_balance', 0)} NFT(s) activo(s)")
         st.write(f"**Contrato:** `{st.session_state.user_nfts.get('contract', 'N/A')}`")
+        st.caption("💡 Solo se cuentan los NFTs que no han caducado")
     
     st.header("🎁 Contenido Exclusivo")
     st.write("""
-    Este es el contenido que solo pueden ver los holders del NFT.
+    Este es el contenido que solo pueden ver los holders de NFTs activos.
     
     Aquí puedes poner:
     - Documentos privados
@@ -167,7 +171,7 @@ else:
             st.error("❌ Dirección inválida. Debe empezar con 0x y tener 42 caracteres.")
         else:
             # Mostrar un spinner mientras verificamos
-            with st.spinner("🔍 Verificando autenticación y NFT..."):
+            with st.spinner("🔍 Verificando autenticación y NFT activo..."):
                 # Consultar el servidor para ver si hay datos de autenticación
                 auth_result = check_auth_on_server(wallet_input)
                 
@@ -180,19 +184,20 @@ else:
                     if verify_signature(wallet_address, message, signature):
                         st.success(f"✅ Firma verificada. Billetera: `{wallet_address}`")
                         
-                        # Verificar NFT
-                        has_nft, nfts = verify_nft_ownership(wallet_address)
-                        if has_nft:
+                        # Verificar NFT ACTIVO
+                        has_active_nft, nfts = verify_nft_ownership(wallet_address)
+                        if has_active_nft:
                             st.session_state.authenticated = True
                             st.session_state.user_wallet = wallet_address
                             st.session_state.user_nfts = nfts
-                            st.success("✅ ¡NFT verificado! Acceso concedido.")
+                            st.success("✅ ¡NFT activo verificado! Acceso concedido.")
                             st.balloons()
                             time.sleep(1)
                             st.rerun()
                         else:
                             st.warning("❌ Acceso Denegado")
-                            st.error("La billetera conectada no posee el NFT requerido en Arbitrum.")
+                            st.error("La billetera conectada no posee un NFT ACTIVO en Arbitrum.")
+                            st.info("💡 Nota: Solo se concede acceso si tienes al menos 1 NFT activo (no caducado).")
                             st.info(f"Contrato requerido: `{NFT_CONTRACT_ADDRESS}`")
                             st.info(f"Red: Arbitrum")
                     else:
