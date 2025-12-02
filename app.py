@@ -1,10 +1,10 @@
 import streamlit as st
 import streamlit.components.v1 as components
-from moralis import evm_api
 import jwt
 import os
 import requests
 from functools import lru_cache
+from web3 import Web3
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
@@ -16,12 +16,13 @@ st.set_page_config(
 # --- CONFIGURACIÓN DEL TOKEN GATING ---
 NFT_CONTRACT_ADDRESS = "0xF4820467171695F4d2760614C77503147A9CB1E8"
 CHAIN = "arbitrum"
+ARBITRUM_RPC = "https://arb1.arbitrum.io/rpc"
 
 # --- CARGAR SECRETOS DE FORMA SEGURA ---
 try:
     PRIVY_APP_ID = st.secrets["PRIVY_APP_ID"]
     PRIVY_APP_SECRET = st.secrets["PRIVY_APP_SECRET"]
-    MORALIS_API_KEY = st.secrets["MORALIS_API_KEY"]
+    MORALIS_API_KEY = st.secrets.get("MORALIS_API_KEY", "")
 except KeyError as e:
     st.error(f"❌ Error: El secreto '{e.args[0]}' no fue encontrado.")
     st.info("Por favor, configura los secretos en Streamlit Cloud:")
@@ -88,24 +89,42 @@ def verify_privy_token(token):
         st.error(f"❌ Error al verificar el token: {e}")
         return None
 
-# --- FUNCIÓN PARA VERIFICAR NFT CON MORALIS ---
+# --- FUNCIÓN PARA VERIFICAR NFT CON WEB3 ---
 def verify_nft_ownership(wallet_address):
     """
     Verifica si una dirección de billetera posee el NFT requerido en Arbitrum.
     Retorna True si posee el NFT, False si no.
     """
     try:
-        result = evm_api.nft.get_wallet_nfts(
-            api_key=MORALIS_API_KEY,
-            params={
-                "address": wallet_address,
-                "chain": CHAIN,
-                "token_addresses": [NFT_CONTRACT_ADDRESS]
+        # Conectar a Arbitrum
+        w3 = Web3(Web3.HTTPProvider(ARBITRUM_RPC))
+        
+        if not w3.is_connected():
+            st.error("❌ No se pudo conectar a la red Arbitrum")
+            return False, None
+        
+        # ERC721 ABI simplificado (solo necesitamos balanceOf)
+        ERC721_ABI = [
+            {
+                "constant": True,
+                "inputs": [{"name": "owner", "type": "address"}],
+                "name": "balanceOf",
+                "outputs": [{"name": "", "type": "uint256"}],
+                "type": "function"
             }
+        ]
+        
+        # Crear instancia del contrato
+        contract = w3.eth.contract(
+            address=Web3.to_checksum_address(NFT_CONTRACT_ADDRESS),
+            abi=ERC721_ABI
         )
         
-        if result.get("result") and len(result["result"]) > 0:
-            return True, result["result"]
+        # Verificar balance
+        balance = contract.functions.balanceOf(Web3.to_checksum_address(wallet_address)).call()
+        
+        if balance > 0:
+            return True, {"balance": balance, "contract": NFT_CONTRACT_ADDRESS}
         else:
             return False, None
             
@@ -136,15 +155,9 @@ if st.session_state.authenticated:
     st.info(f"Billetera conectada: `{st.session_state.user_wallet}`")
     
     if st.session_state.user_nfts:
-        st.subheader("📜 Tus NFTs")
-        for nft in st.session_state.user_nfts:
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                if nft.get("image"):
-                    st.image(nft["image"], width=100)
-            with col2:
-                st.write(f"**{nft.get('name', 'NFT sin nombre')}**")
-                st.caption(f"Token ID: {nft.get('token_id', 'N/A')}")
+        st.subheader("📜 Información del NFT")
+        st.write(f"**Balance:** {st.session_state.user_nfts.get('balance', 0)} NFT(s)")
+        st.write(f"**Contrato:** `{st.session_state.user_nfts.get('contract', 'N/A')}`")
     
     st.header("🎁 Contenido Exclusivo")
     st.write("""
