@@ -104,7 +104,6 @@
 
     function getProvider() {
       // Detectar qué billetera está disponible
-      // Rabby se detecta primero porque es más específico
       if (typeof window.rabby !== 'undefined') {
         return { provider: window.rabby, name: 'Rabby' };
       }
@@ -177,25 +176,20 @@
 
         updateStatus('✅ Autenticación completada', 'success');
 
-        // Enviar datos a la ventana principal (Streamlit)
-        if (window.opener) {
-          window.opener.postMessage(
-            {
-              type: 'auth_complete',
-              wallet: walletAddress,
-              signature: signature,
-              message: message
-            },
-            '*'
-          );
-          
-          // Cerrar la ventana después de 1 segundo
-          setTimeout(() => {
-            window.close();
-          }, 1000);
-        } else {
-          updateStatus('⚠️ Puedes cerrar esta ventana manualmente', 'info');
-        }
+        // GUARDAR EN LOCALSTORAGE para que Streamlit lo detecte
+        const authData = {
+          wallet: walletAddress,
+          signature: signature,
+          message: message,
+          timestamp: Date.now()
+        };
+        
+        localStorage.setItem('web3_auth_data', JSON.stringify(authData));
+        
+        // Cerrar la ventana después de 1 segundo
+        setTimeout(() => {
+          window.close();
+        }, 1000);
 
       } catch (error) {
         console.error('Error:', error);
