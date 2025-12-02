@@ -34,6 +34,9 @@ if 'user_wallet' not in st.session_state:
 if 'user_nfts' not in st.session_state:
     st.session_state.user_nfts = None
 
+if 'auth_data' not in st.session_state:
+    st.session_state.auth_data = None
+
 # --- FUNCIÓN PARA VERIFICAR NFT CON WEB3 ---
 def verify_nft_ownership(wallet_address):
     """
@@ -123,47 +126,57 @@ else:
     
     st.info("Después de autenticarte, vuelve a esta página y refresca.")
 
-    # Componente para detectar datos en localStorage
+    # Componente que escucha postMessage desde la ventana emergente
     components.html("""
     <script>
-        // Verificar cada 500ms si hay datos en localStorage
-        const checkInterval = setInterval(() => {
-            const authData = localStorage.getItem('web3_auth_data');
-            if (authData) {
-                // Enviar datos a Streamlit
-                const data = JSON.parse(authData);
-                window.parent.postMessage(
-                    {
-                        isStreamlitMessage: true,
-                        type: "streamlit:setComponentValue",
-                        data: data
-                    },
-                    "*"
-                );
+        // Escuchar mensajes desde la ventana emergente
+        window.addEventListener('message', function(event) {
+            // Verificar que el mensaje sea del tipo esperado
+            if (event.data && event.data.type === 'web3_auth_complete') {
+                // Guardar los datos en sessionStorage para que Streamlit los lea
+                sessionStorage.setItem('web3_auth_data', JSON.stringify(event.data.data));
                 
-                // Limpiar localStorage
-                localStorage.removeItem('web3_auth_data');
+                // Notificar a Streamlit que hay nuevos datos
+                // Esto se hace enviando un evento personalizado
+                window.dispatchEvent(new CustomEvent('web3_auth_received', {
+                    detail: event.data.data
+                }));
                 
-                // Dejar de verificar
-                clearInterval(checkInterval);
+                console.log('Datos de autenticación recibidos:', event.data.data);
             }
-        }, 500);
-        
-        // Dejar de verificar después de 5 minutos
-        setTimeout(() => {
-            clearInterval(checkInterval);
-        }, 300000);
+        });
     </script>
     """, height=0)
 
-    # Procesar datos recibidos del componente
-    component_value = st.session_state.get("component_value")
-    if component_value and isinstance(component_value, dict):
-        if 'wallet' in component_value:
-            wallet_address = component_value['wallet']
-            signature = component_value.get('signature')
-            message = component_value.get('message')
+    # Leer datos de sessionStorage usando JavaScript
+    auth_data_html = components.html("""
+    <script>
+        // Intentar leer los datos de sessionStorage
+        const authData = sessionStorage.getItem('web3_auth_data');
+        if (authData) {
+            // Enviar a Streamlit
+            window.parent.postMessage(
+                {
+                    isStreamlitMessage: true,
+                    type: "streamlit:setComponentValue",
+                    data: JSON.parse(authData)
+                },
+                "*"
+            );
             
+            // Limpiar
+            sessionStorage.removeItem('web3_auth_data');
+        }
+    </script>
+    """, height=0)
+
+    # Procesar datos recibidos
+    if auth_data_html and isinstance(auth_data_html, dict):
+        wallet_address = auth_data_html.get('wallet')
+        signature = auth_data_html.get('signature')
+        message = auth_data_html.get('message')
+        
+        if wallet_address and signature and message:
             with st.spinner("🔍 Verificando firma y buscando tu NFT..."):
                 if verify_signature(wallet_address, message, signature):
                     st.success(f"✅ Firma verificada. Billetera: `{wallet_address}`")
