@@ -1,4 +1,4 @@
 streamlit
 requests
-PyJWT
 web3
+eth-account
