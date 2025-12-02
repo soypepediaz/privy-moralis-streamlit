@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <title>WalletConnect Component</title>
   <style>
+    * {
+      box-sizing: border-box;
+    }
+    
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
         'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
@@ -12,6 +16,7 @@
       padding: 10px;
       background: transparent;
     }
+    
     button {
       background-color: #0084ff;
       color: white;
@@ -23,16 +28,95 @@
       font-weight: 600;
       transition: background-color 0.2s;
     }
+    
     button:hover {
       background-color: #0073e6;
     }
+    
     button:active {
       background-color: #0066cc;
     }
+    
     #status {
       margin-top: 10px;
       font-size: 12px;
       color: #666;
+    }
+    
+    #modal {
+      display: none;
+      position: fixed;
+      z-index: 10000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      align-items: center;
+      justify-content: center;
+    }
+    
+    #modal.show {
+      display: flex;
+    }
+    
+    #modal-content {
+      background-color: white;
+      padding: 30px;
+      border-radius: 12px;
+      width: 90%;
+      max-width: 500px;
+      max-height: 80vh;
+      overflow: auto;
+      text-align: center;
+    }
+    
+    #modal-content h2 {
+      margin-top: 0;
+      color: #333;
+    }
+    
+    #qr-container {
+      margin: 20px 0;
+      display: flex;
+      justify-content: center;
+    }
+    
+    #qr-container img {
+      max-width: 100%;
+      height: auto;
+    }
+    
+    #uri-display {
+      background-color: #f5f5f5;
+      padding: 15px;
+      border-radius: 6px;
+      margin: 15px 0;
+      word-break: break-all;
+      font-size: 12px;
+      color: #666;
+    }
+    
+    .copy-btn {
+      background-color: #28a745;
+      padding: 8px 15px;
+      font-size: 12px;
+      margin-top: 10px;
+    }
+    
+    .copy-btn:hover {
+      background-color: #218838;
+    }
+    
+    #close-btn {
+      background-color: #dc3545;
+      padding: 8px 15px;
+      font-size: 12px;
+      margin-top: 10px;
+    }
+    
+    #close-btn:hover {
+      background-color: #c82333;
     }
   </style>
 </head>
@@ -40,10 +124,26 @@
   <button id="loginBtn">🔗 Conectar Billetera</button>
   <div id="status"></div>
 
+  <div id="modal">
+    <div id="modal-content">
+      <h2>Conectar con WalletConnect</h2>
+      <p>Escanea el código QR con tu billetera o copia el URI</p>
+      <div id="qr-container">
+        <img id="qr-image" src="" alt="QR Code" style="width: 300px; height: 300px;">
+      </div>
+      <div id="uri-display"></div>
+      <button class="copy-btn" id="copy-btn">📋 Copiar URI</button>
+      <button id="close-btn">Cerrar</button>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 
   <script>
+    let provider = null;
+    let currentUri = null;
+
     function sendToStreamlit(data) {
       window.parent.postMessage(
         {
@@ -60,63 +160,139 @@
       statusDiv.textContent = message;
     }
 
+    function showModal(uri) {
+      currentUri = uri;
+      const modal = document.getElementById('modal');
+      const uriDisplay = document.getElementById('uri-display');
+      const qrImage = document.getElementById('qr-image');
+      
+      // Mostrar URI
+      uriDisplay.textContent = uri;
+      
+      // Generar QR
+      QRCode.toDataURL(uri, {
+        errorCorrectionLevel: 'H',
+        type: 'image/png',
+        quality: 0.95,
+        margin: 1,
+        width: 300,
+      }, function(err, url) {
+        if (err) {
+          console.error('Error generando QR:', err);
+          uriDisplay.innerHTML += '<br><br>Error generando QR';
+        } else {
+          qrImage.src = url;
+        }
+      });
+      
+      modal.classList.add('show');
+    }
+
+    function hideModal() {
+      const modal = document.getElementById('modal');
+      modal.classList.remove('show');
+    }
+
     async function handleLogin() {
       try {
-        updateStatus('Conectando billetera...');
+        updateStatus('Inicializando WalletConnect...');
         
         // Crear proveedor de WalletConnect
-        const provider = new WalletConnectProvider.default({
-          infuraId: "8043bb2cf99347b1bfadfb3c6b0f486a", // ID público de Infura
+        provider = new WalletConnectProvider.default({
+          infuraId: "8043bb2cf99347b1bfadfb3c6b0f486a",
           chainId: 42161, // Arbitrum
           rpc: {
             42161: "https://arb1.arbitrum.io/rpc"
           }
         });
 
+        // Escuchar eventos
+        provider.on('display_uri', (uri) => {
+          console.log('URI recibido:', uri);
+          updateStatus('Escanea el código QR o copia el URI');
+          showModal(uri);
+        });
+
+        provider.on('connect', async () => {
+          updateStatus('Billetera conectada, solicitando firma...');
+          
+          try {
+            // Obtener cuentas
+            const accounts = await provider.request({ method: 'eth_accounts' });
+            
+            if (!accounts || accounts.length === 0) {
+              sendToStreamlit({ error: 'No se pudo obtener la dirección de billetera' });
+              updateStatus('Error: Sin dirección');
+              hideModal();
+              return;
+            }
+
+            const walletAddress = accounts[0];
+            
+            // Crear mensaje para firmar
+            const message = `Conectar a NFT Gated App\n\nDirección: ${walletAddress}\nTimestamp: ${Date.now()}`;
+            
+            updateStatus('Solicitando firma...');
+
+            // Solicitar firma
+            const signature = await provider.request({
+              method: 'personal_sign',
+              params: [message, walletAddress]
+            });
+
+            updateStatus('✅ Autenticación completada');
+            hideModal();
+
+            // Enviar datos a Streamlit
+            sendToStreamlit({
+              wallet: walletAddress,
+              signature: signature,
+              message: message
+            });
+
+          } catch (error) {
+            console.error('Error en conexión:', error);
+            updateStatus('Error: ' + error.message);
+            sendToStreamlit({ error: error.message });
+            hideModal();
+          }
+        });
+
+        provider.on('disconnect', () => {
+          updateStatus('Desconectado');
+          hideModal();
+        });
+
         // Conectar
+        updateStatus('Conectando...');
         await provider.enable();
-        
-        updateStatus('Billetera conectada...');
-
-        // Obtener cuentas
-        const accounts = await provider.request({ method: 'eth_accounts' });
-        
-        if (!accounts || accounts.length === 0) {
-          sendToStreamlit({ error: 'No se pudo obtener la dirección de billetera' });
-          updateStatus('Error: Sin dirección');
-          return;
-        }
-
-        const walletAddress = accounts[0];
-        
-        // Crear mensaje para firmar
-        const message = `Conectar a NFT Gated App\n\nDirección: ${walletAddress}\nTimestamp: ${Date.now()}`;
-        
-        updateStatus('Solicitando firma...');
-
-        // Solicitar firma
-        const signature = await provider.request({
-          method: 'personal_sign',
-          params: [message, walletAddress]
-        });
-
-        updateStatus('✅ Autenticación completada');
-
-        // Enviar datos a Streamlit
-        sendToStreamlit({
-          wallet: walletAddress,
-          signature: signature,
-          message: message
-        });
 
       } catch (error) {
         console.error('Error en login:', error);
         updateStatus('Error: ' + error.message);
         sendToStreamlit({ error: error.message || 'Error desconocido' });
+        hideModal();
       }
     }
 
     document.getElementById('loginBtn').addEventListener('click', handleLogin);
+    
+    document.getElementById('close-btn').addEventListener('click', () => {
+      hideModal();
+      if (provider) {
+        provider.disconnect();
+      }
+    });
+
+    document.getElementById('copy-btn').addEventListener('click', () => {
+      if (currentUri) {
+        navigator.clipboard.writeText(currentUri).then(() => {
+          alert('URI copiado al portapapeles');
+        }).catch(err => {
+          console.error('Error al copiar:', err);
+        });
+      }
+    });
 
     // Informar a Streamlit que el componente está listo
     window.parent.postMessage(
