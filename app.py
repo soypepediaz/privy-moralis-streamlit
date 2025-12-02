@@ -16,8 +16,8 @@ NFT_CONTRACT_ADDRESS = "0xF4820467171695F4d2760614C77503147A9CB1E8"
 CHAIN = "arbitrum"
 ARBITRUM_RPC = "https://arb1.arbitrum.io/rpc"
 
-# URL del servidor FastAPI
-FASTAPI_SERVER_URL = "https://privy-moralis-streamlit-production.up.railway.app"
+# URL del servidor FastAPI - CAMBIAR ESTO A TU URL DE RAILWAY
+FASTAPI_SERVER_URL = "https://privy-moralis-streamlit-production.up.railway.app"  # Cambiar a tu URL de Railway
 
 # --- INTERFAZ DE USUARIO ---
 st.title("🔐 Acceso Exclusivo para Holders")
@@ -33,9 +33,6 @@ if 'user_wallet' not in st.session_state:
 
 if 'user_nfts' not in st.session_state:
     st.session_state.user_nfts = None
-
-if 'checking_auth' not in st.session_state:
-    st.session_state.checking_auth = False
 
 # --- FUNCIÓN PARA VERIFICAR NFT CON WEB3 ---
 def verify_nft_ownership(wallet_address):
@@ -156,58 +153,41 @@ else:
     # Botón para abrir la ventana de autenticación
     st.link_button("🔗 Conectar Billetera", f"{FASTAPI_SERVER_URL}")
     
-    st.info("Después de autenticarte, vuelve a esta página.")
+    st.info("Después de autenticarte, vuelve a esta página y pega tu dirección de billetera en el campo de abajo.")
     
-    # Botón para verificar si el usuario se autenticó
-    if st.button("🔄 Verificar Autenticación"):
-        st.session_state.checking_auth = True
-    
-    if st.session_state.checking_auth:
-        # Mostrar un placeholder mientras verificamos
-        placeholder = st.empty()
-        
-        # Esperar a que el usuario se autentique (máximo 5 minutos)
-        for i in range(300):  # 5 minutos = 300 segundos
-            placeholder.info(f"⏳ Verificando... ({i}s)")
-            
-            # Aquí iría la lógica para detectar automáticamente
-            # Por ahora, el usuario debe hacer clic en "Verificar Autenticación" después de autenticarse
-            time.sleep(1)
-            
-            # En una versión mejorada, podrías usar WebSocket o Server-Sent Events
-            # para detectar automáticamente cuando el usuario se autentica
-        
-        placeholder.empty()
-        st.session_state.checking_auth = False
-    
-    # Alternativa: Mostrar un campo de entrada para que el usuario pegue su dirección
     st.divider()
-    st.subheader("Verificación Manual")
-    st.caption("Si prefieres, puedes pegar tu dirección de billetera después de autenticarte:")
+    st.subheader("Paso 2: Verifica tu Autenticación")
+    st.caption("Pega tu dirección de billetera después de autenticarte:")
     
-    wallet_input = st.text_input("Dirección de billetera (después de autenticarte):")
+    wallet_input = st.text_input("Dirección de billetera (0x...):")
     
     if wallet_input:
         if not wallet_input.startswith("0x") or len(wallet_input) != 42:
             st.error("❌ Dirección inválida. Debe empezar con 0x y tener 42 caracteres.")
         else:
-            # Consultar el servidor para ver si hay datos de autenticación
-            auth_result = check_auth_on_server(wallet_input)
-            
-            if auth_result.get("authenticated"):
-                wallet_address = auth_result.get("wallet")
-                signature = auth_result.get("signature")
-                message = auth_result.get("message")
+            # Mostrar un spinner mientras verificamos
+            with st.spinner("🔍 Verificando autenticación y NFT..."):
+                # Consultar el servidor para ver si hay datos de autenticación
+                auth_result = check_auth_on_server(wallet_input)
                 
-                with st.spinner("🔍 Verificando firma y buscando tu NFT..."):
+                if auth_result.get("authenticated"):
+                    wallet_address = auth_result.get("wallet")
+                    signature = auth_result.get("signature")
+                    message = auth_result.get("message")
+                    
+                    # Verificar la firma
                     if verify_signature(wallet_address, message, signature):
                         st.success(f"✅ Firma verificada. Billetera: `{wallet_address}`")
+                        
+                        # Verificar NFT
                         has_nft, nfts = verify_nft_ownership(wallet_address)
                         if has_nft:
                             st.session_state.authenticated = True
                             st.session_state.user_wallet = wallet_address
                             st.session_state.user_nfts = nfts
                             st.success("✅ ¡NFT verificado! Acceso concedido.")
+                            st.balloons()
+                            time.sleep(1)
                             st.rerun()
                         else:
                             st.warning("❌ Acceso Denegado")
@@ -216,6 +196,7 @@ else:
                             st.info(f"Red: Arbitrum")
                     else:
                         st.error("❌ La firma no es válida")
-            else:
-                st.warning("⚠️ No se encontraron datos de autenticación para esta billetera.")
-                st.info("Asegúrate de haber completado el proceso de autenticación en la ventana emergente.")
+                else:
+                    st.warning("⚠️ No se encontraron datos de autenticación para esta billetera.")
+                    st.info("Asegúrate de haber completado el proceso de autenticación en la ventana emergente.")
+                    st.info("Si ya completaste el proceso, intenta pegar tu dirección de nuevo.")
