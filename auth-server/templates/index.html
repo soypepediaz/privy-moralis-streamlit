@@ -176,7 +176,7 @@
 
         updateStatus('✅ Autenticación completada', 'success');
 
-        // GUARDAR EN LOCALSTORAGE para que Streamlit lo detecte
+        // ENVIAR DATOS A LA VENTANA PADRE (STREAMLIT) USANDO postMessage
         const authData = {
           wallet: walletAddress,
           signature: signature,
@@ -184,12 +184,23 @@
           timestamp: Date.now()
         };
         
-        localStorage.setItem('web3_auth_data', JSON.stringify(authData));
-        
-        // Cerrar la ventana después de 1 segundo
-        setTimeout(() => {
-          window.close();
-        }, 1000);
+        if (window.opener) {
+          // Enviar a la ventana que abrió esta
+          window.opener.postMessage(
+            {
+              type: 'web3_auth_complete',
+              data: authData
+            },
+            '*'
+          );
+          
+          // Cerrar la ventana después de 1 segundo
+          setTimeout(() => {
+            window.close();
+          }, 1000);
+        } else {
+          updateStatus('⚠️ No se pudo cerrar la ventana automáticamente. Puedes cerrarla manualmente.', 'info');
+        }
 
       } catch (error) {
         console.error('Error:', error);
