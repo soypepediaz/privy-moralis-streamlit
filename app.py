@@ -16,6 +16,9 @@ NFT_CONTRACT_ADDRESS = "0xF4820467171695F4d2760614C77503147A9CB1E8"
 CHAIN = "arbitrum"
 ARBITRUM_RPC = "https://arb1.arbitrum.io/rpc"
 
+# URL del servidor FastAPI (debe ser la URL pública de tu servidor)
+FASTAPI_SERVER_URL = "https://privy-moralis-streamlit-production.up.railway.app" # Cambiar en producción
+
 # --- INTERFAZ DE USUARIO ---
 st.title("🔐 Acceso Exclusivo para Holders")
 st.write("Conecta tu billetera para verificar que posees el NFT requerido y accede al contenido exclusivo.")
@@ -38,14 +41,11 @@ def verify_nft_ownership(wallet_address):
     Retorna True si posee el NFT, False si no.
     """
     try:
-        # Conectar a Arbitrum
         w3 = Web3(Web3.HTTPProvider(ARBITRUM_RPC))
-        
         if not w3.is_connected():
             st.error("❌ No se pudo conectar a la red Arbitrum")
             return False, None
         
-        # ERC721 ABI simplificado (solo necesitamos balanceOf)
         ERC721_ABI = [
             {
                 "constant": True,
@@ -56,13 +56,11 @@ def verify_nft_ownership(wallet_address):
             }
         ]
         
-        # Crear instancia del contrato
         contract = w3.eth.contract(
             address=Web3.to_checksum_address(NFT_CONTRACT_ADDRESS),
             abi=ERC721_ABI
         )
         
-        # Verificar balance
         balance = contract.functions.balanceOf(Web3.to_checksum_address(wallet_address)).call()
         
         if balance > 0:
@@ -80,13 +78,8 @@ def verify_signature(wallet_address, message, signature):
     Verifica que la firma fue creada por la billetera especificada.
     """
     try:
-        # Crear el mensaje con el formato de Ethereum
         message_hash = encode_defunct(text=message)
-        
-        # Recuperar la dirección que firmó el mensaje
         recovered_address = Web3.eth.Account.recover_message(message_hash, signature=signature)
-        
-        # Comparar direcciones (case-insensitive)
         return recovered_address.lower() == wallet_address.lower()
     except Exception as e:
         st.error(f"❌ Error al verificar firma: {e}")
@@ -124,61 +117,52 @@ if st.session_state.authenticated:
 
 else:
     st.subheader("Paso 1: Conecta tu Billetera")
-    st.caption("Haz clic en el botón para conectar tu billetera de forma segura con WalletConnect.")
+    st.caption("Haz clic en el botón para abrir la ventana de autenticación.")
     
-    try:
-        component_path = os.path.join('components', 'walletconnect_component.html')
-        
-        if not os.path.exists(component_path):
-            st.error(f"❌ Error: No se encontró el archivo '{component_path}'")
-            st.info("Asegúrate de que la carpeta 'components' y el archivo 'walletconnect_component.html' existan en tu repositorio.")
-            st.stop()
-        
-        with open(component_path, 'r') as f:
-            html_content = f.read()
-        
-        component_value = components.html(html_content, height=100)
+    # Botón para abrir la ventana de autenticación
+    st.link_button("🔗 Conectar Billetera", f"{FASTAPI_SERVER_URL}")
+    
+    st.info("Después de autenticarte, vuelve a esta página y refresca.")
 
-        # Verificar que component_value es un diccionario válido
-        if component_value and isinstance(component_value, dict):
-            if 'error' in component_value:
-                st.error(f"❌ Error de autenticación: {component_value['error']}")
-            elif 'wallet' in component_value:
-                wallet_address = component_value['wallet']
-                signature = component_value.get('signature')
-                message = component_value.get('message')
-                
-                with st.spinner("🔍 Verificando firma y buscando tu NFT..."):
-                    try:
-                        # Verificar que la firma es válida
-                        if not verify_signature(wallet_address, message, signature):
-                            st.error("❌ La firma no es válida")
-                            st.stop()
-                        
-                        st.success(f"✅ Firma verificada. Billetera: `{wallet_address}`")
+    # Componente para escuchar mensajes de la ventana de autenticación
+    components.html("""
+    <script>
+        window.addEventListener('message', (event) => {
+            // En producción, verificar el origen
+            if (event.data && event.data.type === 'auth_complete') {
+                // Enviar datos a Streamlit
+                window.parent.postMessage(
+                    {
+                        isStreamlitMessage: true,
+                        type: "streamlit:setComponentValue",
+                        data: event.data
+                    },
+                    "*"
+                );
+            }
+        });
+    </script>
+    """, height=0)
 
-                        st.info("🔍 Verificando NFT en Arbitrum...")
-                        has_nft, nfts = verify_nft_ownership(wallet_address)
-
-                        if has_nft:
-                            st.session_state.authenticated = True
-                            st.session_state.user_wallet = wallet_address
-                            st.session_state.user_nfts = nfts
-                            st.success("✅ ¡NFT verificado! Acceso concedido.")
-                            st.rerun()
-                        else:
-                            st.warning("❌ Acceso Denegado")
-                            st.error("La billetera conectada no posee el NFT requerido en Arbitrum.")
-                            st.info(f"Contrato requerido: `{NFT_CONTRACT_ADDRESS}`")
-                            st.info(f"Red: Arbitrum")
-
-                    except Exception as e:
-                        st.error(f"❌ Error durante la verificación: {str(e)}")
-                        st.info("Por favor, intenta de nuevo.")
-        else:
-            # Si no hay datos del componente, simplemente mostrar el botón de nuevo
-            st.info("👆 Haz clic en el botón de arriba para conectar tu billetera")
-
-    except FileNotFoundError:
-        st.error("❌ Error: No se encontró el archivo 'components/walletconnect_component.html'")
-        st.info("Asegúrate de que la carpeta 'components' y el archivo 'walletconnect_component.html' existan en tu repositorio.")
+    # Procesar datos recibidos del componente
+    component_value = st.session_state.get("component_value")
+    if component_value and isinstance(component_value, dict):
+        if 'wallet' in component_value:
+            wallet_address = component_value['wallet']
+            signature = component_value.get('signature')
+            message = component_value.get('message')
+            
+            with st.spinner("🔍 Verificando firma y buscando tu NFT..."):
+                if verify_signature(wallet_address, message, signature):
+                    st.success(f"✅ Firma verificada. Billetera: `{wallet_address}`")
+                    has_nft, nfts = verify_nft_ownership(wallet_address)
+                    if has_nft:
+                        st.session_state.authenticated = True
+                        st.session_state.user_wallet = wallet_address
+                        st.session_state.user_nfts = nfts
+                        st.success("✅ ¡NFT verificado! Acceso concedido.")
+                        st.rerun()
+                    else:
+                        st.warning("❌ Acceso Denegado")
+                else:
+                    st.error("❌ La firma no es válida")
