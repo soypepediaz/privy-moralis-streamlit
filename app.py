@@ -22,14 +22,12 @@ ARBITRUM_RPC = "https://arb1.arbitrum.io/rpc"
 try:
     PRIVY_APP_ID = st.secrets["PRIVY_APP_ID"]
     PRIVY_APP_SECRET = st.secrets["PRIVY_APP_SECRET"]
-    MORALIS_API_KEY = st.secrets.get("MORALIS_API_KEY", "")
 except KeyError as e:
     st.error(f"❌ Error: El secreto '{e.args[0]}' no fue encontrado.")
     st.info("Por favor, configura los secretos en Streamlit Cloud:")
     st.code("""
 PRIVY_APP_ID = "tu-app-id"
 PRIVY_APP_SECRET = "tu-app-secret"
-MORALIS_API_KEY = "tu-moralis-key"
     """)
     st.stop()
 
@@ -196,7 +194,8 @@ else:
         
         component_value = components.html(html_content, height=100)
 
-        if component_value:
+        # Verificar que component_value es un diccionario válido
+        if component_value and isinstance(component_value, dict):
             if 'error' in component_value:
                 st.error(f"❌ Error de autenticación: {component_value['error']}")
             elif 'token' in component_value:
@@ -239,6 +238,9 @@ else:
                     except Exception as e:
                         st.error(f"❌ Error durante la verificación: {str(e)}")
                         st.info("Por favor, verifica que tus credenciales sean correctas.")
+        else:
+            # Si no hay datos del componente, simplemente mostrar el botón de nuevo
+            st.info("👆 Haz clic en el botón de arriba para conectar tu billetera")
 
     except FileNotFoundError:
         st.error("❌ Error: No se encontró el archivo 'components/privy_component.html'")
