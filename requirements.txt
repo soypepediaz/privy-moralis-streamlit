@@ -1,4 +1,4 @@
 streamlit==1.51.0
-moralis==0.2.0
 requests==2.32.5
 PyJWT==2.8.1
+web3==7.0.0
